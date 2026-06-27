@@ -1,6 +1,9 @@
 services:
   cosyvoice:
-    image: neosun/cosyvoice:v3
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: cosyvoice-5060ti:local
     container_name: cosyvoice
     restart: unless-stopped
     ports:
@@ -9,18 +12,25 @@ services:
       - /tmp/cosyvoice/input:/data/input
       - /tmp/cosyvoice/output:/data/output
       - /tmp/cosyvoice/voices:/data/voices
+      - ${MODELSCOPE_CACHE:-${HOME}/.cache/modelscope}:/root/.cache/modelscope:ro
     environment:
-      - MODEL_DIR=${MODEL_DIR:-pretrained_models/Fun-CosyVoice3-0.5B}
+      - MODELSCOPE_CACHE=/root/.cache/modelscope
+      - MODEL_DIR=${MODEL_DIR:-}
+      - ASR_MODEL_DIR=${ASR_MODEL_DIR:-}
       - PORT=8188
       - GPU_IDLE_TIMEOUT=${GPU_IDLE_TIMEOUT:-600}
-      - NVIDIA_VISIBLE_DEVICES=1
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
       - CUDA_VISIBLE_DEVICES=0
+      - CUDA_MODULE_LOADING=LAZY
+      - PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True,max_split_size_mb:128
+      - TORCH_CUDA_ARCH_LIST=12.0
     deploy:
       resources:
         reservations:
           devices:
             - driver: nvidia
-              device_ids: ["1"]
+              count: 1
               capabilities: [gpu]
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8188/health"]

@@ -1,8 +1,14 @@
-FROM nvidia/cuda:12.4.1-cudnn-devel-ubuntu22.04
+FROM nvidia/cuda:12.8.1-cudnn-devel-ubuntu22.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 ENV LANG=C.UTF-8 LC_ALL=C.UTF-8
+ENV NVIDIA_VISIBLE_DEVICES=all
+ENV NVIDIA_DRIVER_CAPABILITIES=compute,utility
+ENV CUDA_VISIBLE_DEVICES=0
+ENV CUDA_MODULE_LOADING=LAZY
+ENV PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True,max_split_size_mb:128
+ENV TORCH_CUDA_ARCH_LIST=12.0
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -30,6 +36,13 @@ WORKDIR /app
 
 # Copy requirements and install
 COPY requirements.txt .
+ARG PYTORCH_VERSION=2.7.1
+ARG PYTORCH_CUDA=cu128
+RUN pip install --no-cache-dir \
+    torch==${PYTORCH_VERSION}+${PYTORCH_CUDA} \
+    torchaudio==${PYTORCH_VERSION}+${PYTORCH_CUDA} \
+    --index-url https://download.pytorch.org/whl/${PYTORCH_CUDA}
+
 RUN pip install --no-cache-dir -r requirements.txt \
     -i https://mirrors.aliyun.com/pypi/simple/ --trusted-host=mirrors.aliyun.com
 
@@ -41,21 +54,16 @@ RUN pip install --no-cache-dir fastmcp funasr \
 COPY third_party third_party/
 COPY cosyvoice cosyvoice/
 COPY asset asset/
-COPY app.py mcp_server.py model.py ./
+COPY app.py mcp_server.py model.py model_paths.py ./
 
 # Set Python path
 ENV PYTHONPATH=/app:/app/third_party/Matcha-TTS
-
-# Download models - Fun-CosyVoice3-0.5B from HuggingFace (faster)
-ARG MODEL_NAME=Fun-CosyVoice3-0.5B
-RUN pip install --no-cache-dir huggingface_hub && \
-    python -c "from huggingface_hub import snapshot_download; snapshot_download('FunAudioLLM/Fun-CosyVoice3-0.5B-2512', local_dir='pretrained_models/${MODEL_NAME}')"
 
 # Create data directories
 RUN mkdir -p /data/input /data/output
 
 # Environment variables
-ENV MODEL_DIR=pretrained_models/${MODEL_NAME}
+ENV MODELSCOPE_CACHE=/root/.cache/modelscope
 ENV INPUT_DIR=/data/input
 ENV OUTPUT_DIR=/data/output
 ENV PORT=8188
