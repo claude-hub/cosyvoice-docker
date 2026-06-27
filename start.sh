@@ -11,7 +11,12 @@ echo -e "${GREEN}🎙️ CosyVoice Docker Launcher${NC}"
 echo "================================"
 
 # Check nvidia-docker
-if ! command -v nvidia-smi &> /dev/null; then
+NVIDIA_SMI=$(command -v nvidia-smi || true)
+if [ -z "$NVIDIA_SMI" ] && [ -x /usr/lib/wsl/lib/nvidia-smi ]; then
+    NVIDIA_SMI=/usr/lib/wsl/lib/nvidia-smi
+fi
+
+if [ -z "$NVIDIA_SMI" ]; then
     echo -e "${RED}❌ nvidia-smi not found. Please install NVIDIA drivers.${NC}"
     exit 1
 fi
@@ -20,26 +25,34 @@ if ! docker info 2>/dev/null | grep -q "Runtimes.*nvidia"; then
     echo -e "${YELLOW}⚠️ nvidia-docker runtime not detected. GPU support may not work.${NC}"
 fi
 
-# Auto-select GPU with least memory usage
-echo -e "${YELLOW}🔍 Detecting GPUs...${NC}"
-GPU_ID=$(nvidia-smi --query-gpu=index,memory.used --format=csv,noheader,nounits | \
-         sort -t',' -k2 -n | head -1 | cut -d',' -f1 | tr -d ' ')
+# Fixed target: RTX 5060 Ti 16G on host GPU 0
+echo -e "${YELLOW}🔍 Checking GPU 0...${NC}"
+GPU_ID=0
 
-if [ -z "$GPU_ID" ]; then
-    echo -e "${RED}❌ No GPU detected${NC}"
+if ! "$NVIDIA_SMI" -i $GPU_ID > /dev/null 2>&1; then
+    echo -e "${RED}❌ GPU 0 not detected${NC}"
     exit 1
 fi
 
-GPU_NAME=$(nvidia-smi --query-gpu=name --format=csv,noheader -i $GPU_ID)
-GPU_MEM=$(nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader -i $GPU_ID)
-echo -e "${GREEN}✅ Selected GPU $GPU_ID: $GPU_NAME ($GPU_MEM)${NC}"
+GPU_NAME=$("$NVIDIA_SMI" --query-gpu=name --format=csv,noheader -i $GPU_ID)
+GPU_MEM=$("$NVIDIA_SMI" --query-gpu=memory.used,memory.total --format=csv,noheader -i $GPU_ID)
+echo -e "${GREEN}✅ Using GPU $GPU_ID: $GPU_NAME ($GPU_MEM)${NC}"
 
-export NVIDIA_VISIBLE_DEVICES=$GPU_ID
+export NVIDIA_VISIBLE_DEVICES=all
+export CUDA_VISIBLE_DEVICES=0
 
 # Load .env if exists
 if [ -f .env ]; then
     export $(grep -v '^#' .env | xargs)
 fi
+
+MODELSCOPE_CACHE=${MODELSCOPE_CACHE:-$HOME/.cache/modelscope}
+if [ ! -d "$MODELSCOPE_CACHE" ]; then
+    echo -e "${RED}❌ MODELSCOPE_CACHE does not exist: $MODELSCOPE_CACHE${NC}"
+    echo -e "${YELLOW}   Set MODELSCOPE_CACHE in .env to the directory used by 'modelscope download'.${NC}"
+    exit 1
+fi
+export MODELSCOPE_CACHE
 
 # Default port
 PORT=${PORT:-8188}
@@ -66,7 +79,7 @@ export PORT
 echo -e "${GREEN}📡 Using port: $PORT${NC}"
 
 # Create data directories
-mkdir -p /tmp/cosyvoice/input /tmp/cosyvoice/output
+mkdir -p /tmp/cosyvoice/input /tmp/cosyvoice/output /tmp/cosyvoice/voices
 
 # Start
 echo -e "${YELLOW}🚀 Starting service...${NC}"

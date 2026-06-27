@@ -27,6 +27,7 @@ sys.path.insert(0, str(ROOT_DIR / "third_party/Matcha-TTS"))
 
 from cosyvoice.cli.cosyvoice import AutoModel
 from cosyvoice.utils.file_utils import load_wav
+from model_paths import resolve_asr_model_dir, resolve_tts_model_dir
 
 # Fun-ASR-Nano for auto transcription
 _asr_model = None
@@ -35,9 +36,10 @@ def get_asr_model():
     global _asr_model
     if _asr_model is None:
         from funasr import AutoModel
-        print("Loading Fun-ASR-Nano model...")
+        asr_model_dir = resolve_asr_model_dir()
+        print(f"Loading Fun-ASR-Nano model from {asr_model_dir}...")
         _asr_model = AutoModel(
-            model="FunAudioLLM/Fun-ASR-Nano-2512",
+            model=asr_model_dir,
             trust_remote_code=True,
             remote_code="./model.py",
             device="cuda:0",
@@ -128,8 +130,7 @@ class GPUManager:
         
     def get_model(self, model_dir: str = None):
         with self.lock:
-            if model_dir is None:
-                model_dir = os.getenv("MODEL_DIR", "pretrained_models/Fun-CosyVoice3-0.5B")
+            model_dir = resolve_tts_model_dir(model_dir)
             if self.model is None or self.model_dir != model_dir:
                 self._load_model(model_dir)
             return self.model
@@ -343,9 +344,14 @@ async def openai_speech(request: SpeechRequest):
     else:
         # 使用预训练音色（如果有）
         available_spks = model.list_available_spks()
-        if request.voice in available_spks:
+        voice = request.voice
+        if voice in ("", "default"):
+            if not available_spks:
+                raise HTTPException(400, "No preset voices are available. Create a custom voice via /v1/voices/create")
+            voice = available_spks[0]
+        if voice in available_spks:
             output = model.inference_sft(
-                request.input, request.voice,
+                request.input, voice,
                 stream=(request.response_format == "pcm"), speed=request.speed
             )
         else:

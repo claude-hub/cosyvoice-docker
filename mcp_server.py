@@ -18,6 +18,7 @@ sys.path.insert(0, str(ROOT_DIR / "third_party/Matcha-TTS"))
 
 from fastmcp import FastMCP
 from cosyvoice.cli.cosyvoice import AutoModel
+from model_paths import resolve_tts_model_dir
 
 # Directories
 INPUT_DIR = Path(os.getenv("INPUT_DIR", "/data/input"))
@@ -44,8 +45,7 @@ class GPUManager:
         
     def get_model(self, model_dir: str = None):
         with self.lock:
-            if model_dir is None:
-                model_dir = os.getenv("MODEL_DIR", "pretrained_models/CosyVoice2-0.5B")
+            model_dir = resolve_tts_model_dir(model_dir)
             if self.model is None or self.model_dir != model_dir:
                 self._load_model(model_dir)
             self.last_used = time.time()
